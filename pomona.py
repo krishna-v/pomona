@@ -3,8 +3,6 @@
 import time
 import argparse
 from types import SimpleNamespace
-from threading import Thread
-from wsgiref.simple_server import make_server, WSGIRequestHandler
 from pathlib import Path
 import configparser
 import syslog
@@ -12,6 +10,7 @@ import daemon
 from gpiozero import Button
 
 import hostactions
+from webserverthread import WebServerThread
 
 event_time = time.time()
 on_mains = True
@@ -82,10 +81,8 @@ def monitor_loop(config):
     global event_time, on_mains, event_stack, maxevents
 
     if config.args.webserver:
-        req_handler = QuietWSGIRequestHandler
-        if config.args.verbose and config.args.foreground:
-            req_handler = WSGIRequestHandler
-        server = WebServerThread(config.webserver_port, webserver_app, req_handler)
+        server = WebServerThread(config.webserver_port, webserver_app,
+                not(config.args.verbose and config.args.foreground))
         server.start()
 
     last_event_time = event_time = now = time.time()
@@ -145,21 +142,6 @@ def webserver_app(environ, start_response):
 
     ret.extend([("%s: %s\n" % (time.strftime("%Y-%m-%d %T", time.localtime(val[1])), val[0])).encode("utf-8") for val in event_stack])
     return ret
-
-class QuietWSGIRequestHandler(WSGIRequestHandler):
-    def log_message(self, fmt, *args):
-        pass
-
-class WebServerThread(Thread):
-    def __init__(self, port, app_function, req_handler):
-        Thread.__init__(self)
-        self.port = port
-        self.app_function = app_function
-        self.req_handler = req_handler
-
-    def run(self):
-        httpd = make_server('', self.port, self.app_function, handler_class=self.req_handler)
-        httpd.serve_forever()
 
 
 def do_main():
