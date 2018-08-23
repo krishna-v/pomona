@@ -11,6 +11,7 @@ class WebServerThread(Thread):
     def __init__(self, port, app_function, quiet):
         Thread.__init__(self)
         self.daemon = True
+        self.name = "WebServer"
         self.port = port
         self.app_function = app_function
         self.handler = _QuietWSGIRequestHandler if quiet else WSGIRequestHandler

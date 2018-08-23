@@ -3,6 +3,7 @@
 import time
 import argparse
 from types import SimpleNamespace
+import threading
 from pathlib import Path
 import configparser
 import syslog
@@ -29,6 +30,7 @@ def loadconfig(filename):
     config.remoteid = cp.get('master', 'remote-id', fallback="pomona")
     config.keyfile = cp.get('master', 'key-file', fallback='')
     config.webserver_port = cp.get('master', 'webserver-port', fallback=8000)
+    config.multithread = cp.getboolean('master', 'multithread', fallback=True)
     maxevents = cp.getint('master', 'events', fallback=50)
     #config.logfile = cp.get('master', 'log-file', fallback='/tmp/pomona.log')
 
@@ -69,6 +71,14 @@ def restored(sensor):
     on_mains = True
     add_event(event_time, 'RESTORED')
     syslog.syslog("Power restored at " + str(event_time))
+
+
+def do_host_action(action, host, config):
+    if config.multithread:
+        threading.Thread(target=action, name=host,
+                args=(host,config), daemon=True).start()
+    else:
+        action(host, config)
 
 
 def unknown_action(host, config):
@@ -115,7 +125,9 @@ def monitor_loop(config):
                     syslog.syslog("Triggering group: " +  group.name)
                     for host in group.hosts:
                         syslog.syslog("Notifying host " + host)
-                        getattr(hostactions, group.action, unknown_action)(host, config)
+                        do_host_action(
+                            getattr(hostactions, group.action, unknown_action),
+                            host, config)
                         add_event(now, "Notified " + host)
                     group.notified = True
 
@@ -138,7 +150,10 @@ def webserver_app(environ, start_response):
     ret = []
     state = "On Mains" if on_mains else "Power Tripped"
     ret.append(("Current State: " + state + "\n").encode("utf-8"))
-    ret.append("Events:\n".encode("utf-8"))
+    ret.append("\nThreads:\n".encode("utf-8"))
+    ret.extend([("%s\n" %  thread.name).encode("utf-8")
+        for thread in threading.enumerate()])
+    ret.append("\nEvents:\n".encode("utf-8"))
 
     ret.extend([("%s: %s\n" % (time.strftime("%Y-%m-%d %T", time.localtime(val[1])), val[0])).encode("utf-8") for val in event_stack])
     return ret
