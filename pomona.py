@@ -48,6 +48,7 @@ def loadconfig(filename):
 
 
 def add_event(timestamp, desc):
+    """Helper function to add an event to the event stack"""
     global event_stack, maxevents
     event = desc, timestamp
     event_stack.append(event)
@@ -74,9 +75,10 @@ def restored(sensor):
 
 
 def do_host_action(action, host, config):
+    """Execute action on a remote host. Optionally spin off a separate thread"""
     if config.multithread:
         threading.Thread(target=action, name=host,
-                args=(host,config), daemon=True).start()
+                            args=(host, config), daemon=True).start()
     else:
         action(host, config)
 
@@ -92,7 +94,7 @@ def monitor_loop(config):
 
     if config.args.webserver:
         server = WebServerThread(config.webserver_port, webserver_app,
-                not(config.args.verbose and config.args.foreground))
+                                config.args.verbose and config.args.foreground)
         server.start()
 
     last_event_time = event_time = now = time.time()
@@ -141,39 +143,43 @@ def monitor_loop(config):
 
 
 def webserver_app(environ, start_response):
+    """Function to service web server request for event information"""
     global event_stack, on_mains
 
     status = '200 OK'
     headers = [('Content-type', 'text/plain; charset=utf-8')]
-
     start_response(status, headers)
+
     ret = []
     state = "On Mains" if on_mains else "Power Tripped"
     ret.append(("Current State: " + state + "\n").encode("utf-8"))
+
     ret.append("\nThreads:\n".encode("utf-8"))
     ret.extend([("%s\n" %  thread.name).encode("utf-8")
-        for thread in threading.enumerate()])
-    ret.append("\nEvents:\n".encode("utf-8"))
+                for thread in threading.enumerate()])
 
-    ret.extend([("%s: %s\n" % (time.strftime("%Y-%m-%d %T", time.localtime(val[1])), val[0])).encode("utf-8") for val in event_stack])
+    ret.append("\nEvents:\n".encode("utf-8"))
+    ret.extend([("%s: %s\n" %
+                (time.strftime("%Y-%m-%d %T", time.localtime(val[1])), val[0])
+                ).encode("utf-8") for val in event_stack])
     return ret
 
 
 def do_main():
     """Main function"""
-    syslog.openlog("Pomona", facility=syslog.LOG_DAEMON)
-
     try:
+        syslog.openlog("Pomona", facility=syslog.LOG_DAEMON)
+
         parser = argparse.ArgumentParser(
-                description="Pomona - Power Monitor Appliance")
+                            description="Pomona - Power Monitor Appliance")
         parser.add_argument('-c', '--config', default='/etc/pomona/pomona.ini',
-                help='config file (default: /etc/pomona/pomona.ini)')
+                            help='conf file (default: /etc/pomona/pomona.ini)')
         parser.add_argument('-v', '--verbose', action='store_true',
-                help='be more noisy')
+                            help='be more noisy')
         parser.add_argument('-F', '--foreground', action='store_true',
-                help="run in foreground and don't beome a daemon")
+                            help="run in foreground.")
         parser.add_argument('-w', '--webserver', action='store_true',
-                help="run webserver showing event history. Default port: 8000")
+                            help="run webserver. Default port: 8000")
         args = parser.parse_args()
 
         cfg_file = Path(args.config)
